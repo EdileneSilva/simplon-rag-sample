@@ -11,9 +11,11 @@ describe('createConversation', () => {
   it('returns the conversation id on success', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ conversation_id: 'abc-123' }), { status: 200 })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ conversation_id: 'abc-123' }), { status: 200 })
+        )
     );
 
     const id = await createConversation(BASE);
@@ -40,9 +42,11 @@ describe('sendMessage', () => {
   it('posts JSON content and returns content + sources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ content: 'Hello', sources: ['s1', 's2'] }), { status: 200 })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ content: 'Hello', sources: ['s1', 's2'] }), { status: 200 })
+        )
     );
 
     const result = await sendMessage(BASE, 'conv-1', 'Hi');

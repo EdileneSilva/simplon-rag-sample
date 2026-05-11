@@ -24,7 +24,10 @@
     {#if isUser}
       <p class="whitespace-pre-wrap break-words">{message.content}</p>
     {:else}
-      <div class="prose-sm max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-brand-ink/10 [&_pre]:p-2 [&_code]:font-mono">
+      <div
+        class="prose-sm max-w-none break-words [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-brand-ink/10 [&_pre]:p-2 [&_code]:font-mono"
+      >
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- HTML is sanitized via DOMPurify above -->
         {@html html}
       </div>
       <SourcesPanel sources={message.sources} />
