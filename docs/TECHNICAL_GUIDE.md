@@ -266,6 +266,79 @@ uv run python -m rag.cli.eval [--samples PATH]
 
 ---
 
+## Docker Setup
+
+The project ships a full Docker stack: PostgreSQL (pgvector), the FastAPI API,
+and the Streamlit frontend. Two compose files cover the dev/prod split:
+
+| File | Role |
+|------|------|
+| `docker-compose.yml` | Base + **dev**: source bind mounts, hot reload (`uvicorn --reload`, `streamlit --server.runOnSave`), all ports exposed on `localhost`. |
+| `docker-compose.prod.yml` | **Prod overlay**: multi-worker API, no source mounts, PostgreSQL port hidden from the host, `restart: always`. |
+
+Each application has a multi-stage `Dockerfile` with two targets:
+
+- `dev` — full deps (including dev tools), uvicorn `--reload` / Streamlit `runOnSave`.
+- `prod` — only runtime deps, source baked into the image, multi-worker uvicorn,
+  Streamlit `--server.headless=true`. For the API, a slim runtime stage copies
+  `/opt/venv` from a `prod-builder` stage so the final image carries no compilers.
+
+### Services
+
+| Service | Image / Build | Ports (dev) | Notes |
+|---------|---------------|-------------|-------|
+| `postgres` | `pgvector/pgvector:pg16` | `5432:5432` | Healthcheck via `pg_isready`. `init.sql` mounted into `/docker-entrypoint-initdb.d/`. |
+| `api` | `./api` (target `dev`/`prod`) | `8000:8000` | `depends_on: postgres healthy`. Entrypoint runs `alembic upgrade head` then `exec "$@"`. Healthcheck on `/api/v1/health`. |
+| `frontend` | `./frontend` (target `dev`/`prod`) | `8501:8501` | `depends_on: api healthy`. Calls API via `RAG_API_URL=http://api:8000`. |
+
+### Configuration
+
+- The API reads `api/.env` via `env_file:` (loads `MISTRAL_API_KEY` and Postgres
+  credentials).
+- The compose file overrides `POSTGRES_HOST=postgres` and
+  `POSTGRES_PORT=5432` so the API targets the postgres service inside the
+  network rather than `localhost`.
+- The frontend receives `RAG_API_URL=http://api:8000` directly from the compose
+  `environment:` block.
+
+### Volumes
+
+| Volume | Purpose |
+|--------|---------|
+| `pgdata` | PostgreSQL data directory (persistent across `docker compose down`). |
+| `api_data_docs` | Ingestion drop zone (`/app/data/docs`). |
+| `api_data_eval` | Evaluation samples (`/app/data/evaluation`). |
+
+`docker compose down -v` drops all three volumes and forces `init.sql` to
+re-run on the next boot.
+
+### Common Commands
+
+```bash
+# Dev
+docker compose up -d                                                   # start
+docker compose logs -f api                                             # tail API logs
+docker compose exec api uv run pytest                                  # run tests in-container
+docker compose exec postgres psql -U rag_user -d rag                   # psql shell
+docker compose down                                                    # stop (keep data)
+
+# Prod
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# Full reset (drops DB)
+docker compose down -v
+```
+
+### Secrets
+
+In dev, `MISTRAL_API_KEY` lives in the gitignored `api/.env`. In a real
+deployment, inject it via your platform's secret manager (Docker Swarm
+secrets, Kubernetes Secrets, AWS SSM…) rather than baking it into the image
+or committing it to git.
+
+---
+
 ## CI/CD
 
 ### Lint Workflow

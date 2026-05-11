@@ -7,7 +7,15 @@ Main guide for AI assistants working on this repository.
 ## Quick commands
 
 ```bash
-# API (FastAPI) — all commands run from api/
+# Full stack via Docker (from repo root)
+docker compose up -d                       # dev: hot reload, source mounts, ports 5432/8000/8501
+docker compose logs -f api                 # tail API logs
+docker compose down                        # stop dev stack
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+                                           # prod: workers, no source mount, postgres internal-only
+docker compose down -v                     # full reset (drops pgdata volume)
+
+# API (FastAPI) — local install, all commands run from api/
 cd api
 uv sync                       # Install API dependencies
 uv sync --extra dev           # Install with dev tools

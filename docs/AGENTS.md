@@ -37,7 +37,16 @@ Complete guide for AI assistants working on this repository.
 ### Available Commands
 
 ```bash
-# API (FastAPI) — from api/
+# Full stack via Docker (from repo root)
+docker compose up -d                                  # dev: hot reload, sources mounted
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+                                                      # prod: multi-worker, no source mount
+docker compose logs -f <service>                      # tail logs (api, frontend, postgres)
+docker compose exec api alembic upgrade head          # run a migration in-container
+docker compose down                                   # stop (preserve pgdata)
+docker compose down -v                                # stop + reset DB volume
+
+# API (FastAPI) — local install, from api/
 cd api
 uv sync                       # Install/sync API dependencies
 uv sync --extra dev           # Install with dev tools
