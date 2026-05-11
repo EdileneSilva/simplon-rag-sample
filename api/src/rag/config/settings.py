@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     app_log_level: str = "INFO"
     app_port: int = 8000
 
+    # CORS — comma-separated origins allowed to call the API from a browser.
+    cors_allowed_origins: str = "http://localhost:5173,http://localhost:4173"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     # RAG tuning
     chunk_size: int = 512
     chunk_overlap: int = 64
