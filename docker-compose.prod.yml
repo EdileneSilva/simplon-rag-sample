@@ -19,5 +19,9 @@ services:
   frontend:
     build:
       target: prod
+      args:
+        PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:8000}"
+    ports: !override
+      - "4173:80"
     volumes: !override []
     restart: always

@@ -21,8 +21,9 @@
 ### 📝 Description rapide
 
 Vous reprenez un projet existant : une API FastAPI (LangGraph + Mistral + pgvector) qui
-expose un chatbot RAG, et un frontend Streamlit qui consomme l'API. L'application est
-livrée sans observabilité.
+expose un chatbot RAG, et un frontend SvelteKit + Tailwind CSS v4 (SPA statique servie
+via `@sveltejs/adapter-static`) qui consomme l'API. L'application est livrée sans
+observabilité.
 
 Votre mission : la rendre observable de bout en bout avec une stack complète
 conteneurisée — logs JSON structurés, métriques Prometheus, dashboard Grafana, alertes
@@ -64,8 +65,10 @@ Le projet est composé de deux services Python (un repo, mais déployés indépe
   - `POST /eval/run` — déclenchement d'une évaluation Ragas (faithfulness,
     answer_relevancy, context_recall)
   - `GET /health` — healthcheck
-- **`frontend/`** — une UI Streamlit qui crée des conversations et affiche les réponses +
-  sources.
+- **`frontend/`** — une UI SvelteKit (Svelte 5 / runes) stylée avec Tailwind CSS v4,
+  bâtie en SPA statique via `@sveltejs/adapter-static` et empaquetée avec Bun. Elle
+  crée des conversations et affiche les réponses + sources directement depuis le
+  navigateur en appelant l'API.
 
 **Trafic actuel observé en pic** :
 
@@ -107,10 +110,13 @@ de les diagnostiquer.
 
 **Stack applicative**
 
-- Logs : sortie stdout en JSON (`python-json-logger`)
+- Logs : sortie stdout en JSON (`python-json-logger` côté API). Le frontend SvelteKit
+  est un SPA statique exécuté dans le navigateur : pas de logs serveur applicatifs à
+  collecter, seulement les logs d'accès du serveur statique (nginx en prod) et,
+  optionnellement, du logging structuré côté client renvoyé à l'API
 - Collecte logs : Loki (pour la corrélation logs ↔ métriques
   dans Grafana)
-- Métriques : Prometheus + `prometheus-client` côté API (et frontend si pertinent)
+- Métriques : Prometheus + `prometheus-client` côté API
 - Dashboards : Grafana
 - Alertes : Alertmanager + webhook Discord (canal dédié)
 
@@ -127,14 +133,15 @@ de les diagnostiquer.
 - Tout le projet (API + frontend + Postgres/pgvector + Prometheus + Grafana +
   Alertmanager + Langfuse + Loki) doit être lancé par un **unique
   `docker compose up`**.
-- Dockerfile écrit pour `api/` et `frontend/`.
+- Dockerfile écrit pour `api/` (Python 3.14 + `uv`) et `frontend/` (Bun + SvelteKit,
+  build statique servi par nginx en prod).
 
 #### Point de départ
 
 Le repo de départ contient déjà :
 
 - l'API FastAPI fonctionnelle (`api/`),
-- le frontend Streamlit (`frontend/`),
+- le frontend SvelteKit + Tailwind CSS v4 (`frontend/`),
 - les migrations Alembic (`api/data/alembic/`),
 - un `docker-compose.yml` partiel,
 - un corpus de test (placez vos PDF dans `data/docs/`, vos URLs sources dans
@@ -169,8 +176,10 @@ sur la machine du formateur).
 
 Reprenez le repo de départ. Mettez en place :
 
-- Un logging JSON structuré (vu en J1 avec `python-json-logger`) côté `api/` et
-  `frontend/`
+- Un logging JSON structuré (vu en J1 avec `python-json-logger`) côté `api/` (le
+  `frontend/` étant un SPA statique, le logging applicatif structuré ne s'applique
+  qu'à l'API — vous pouvez exposer un endpoint d'ingestion de logs client si vous le
+  souhaitez)
 - Un middleware FastAPI qui génère un `request_id` (UUID v4) à l'entrée de chaque
   requête et le propage dans **tous** les logs
 - Niveaux de log respectés : `INFO` pour les événements applicatifs nominaux, `WARNING`
@@ -271,8 +280,8 @@ tokens). Vous devez le diagnostiquer dans Langfuse, pas dans Prometheus.
 ### Phase 6 — APM *(optionnel)*
 
 Si vous avez le temps : ajouter un APM (OpenTelemetry → Tempo / Jaeger, ou Sentry) pour
-le tracing distribué `frontend Streamlit → API FastAPI → DB pgvector → Mistral`.
-Démontrer une trace de bout en bout en soutenance.
+le tracing distribué `frontend SvelteKit (navigateur) → API FastAPI → DB pgvector →
+Mistral`. Démontrer une trace de bout en bout en soutenance.
 
 ###  *(optionnel)* Soutenance *(J3 fin de journée, 15 min/binôme)*
 
@@ -347,10 +356,14 @@ simplon-rag-sample/
 │   │   │   └── routers/            (ajout endpoint feedback)
 │   │   └── rag/agent/              (callback handler câblé sur le graphe LangGraph)
 │   └── tests/
-├── frontend/
-│   ├── Dockerfile                  (NOUVEAU)
-│   ├── pyproject.toml              (ajout : python-json-logger)
-│   └── src/app/                    (logs structurés sur les appels API)
+├── frontend/                       (SvelteKit + Tailwind v4, Bun, SPA statique)
+│   ├── Dockerfile                  (NOUVEAU — Bun pour dev, nginx pour la prod)
+│   ├── package.json                (deps SvelteKit / Tailwind / marked / DOMPurify)
+│   ├── svelte.config.js            (`@sveltejs/adapter-static`)
+│   ├── vite.config.ts              (plugins Tailwind + SvelteKit + Vitest)
+│   └── src/                        (routes Svelte 5 + composants, appels API depuis
+│                                    le navigateur — propager un `request_id` côté
+│                                    client si pertinent pour la corrélation)
 ├── prometheus/
 │   ├── prometheus.yml
 │   └── rules.yml                   (règles d'alerte, dont alerte coût LLM)
@@ -379,7 +392,7 @@ simplon-rag-sample/
 ### Contenu obligatoire du README
 
 - Description du projet (positionnement Simplon, finalité du chatbot)
-- Architecture (FastAPI + LangGraph + Mistral + pgvector + Streamlit)
+- Architecture (FastAPI + LangGraph + Mistral + pgvector + frontend SvelteKit/Tailwind v4)
 - Technologies utilisées (avec versions)
 - Instructions d'installation et de lancement (`docker compose up` + procédure de
   bootstrap Langfuse)
@@ -423,7 +436,9 @@ Couvre l'agent RAG ET le LLM.
 
 ### C20 — Surveiller une application d'IA *(Niveau 3)*
 
-- Logging JSON structuré sur stdout (API + frontend)
+- Logging JSON structuré sur stdout (API ; le frontend étant un SPA statique, on
+  conserve les logs d'accès du serveur statique et, optionnellement, une remontée
+  structurée de logs client vers l'API)
 - `request_id` propagé dans tous les logs **ET** dans les métadonnées Langfuse
 - Métriques HTTP RED instrumentées avec différenciation des endpoints
 - Endpoint `/metrics` scrappé par Prometheus

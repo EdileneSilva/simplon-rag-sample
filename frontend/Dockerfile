@@ -1,56 +1,55 @@
 # syntax=docker/dockerfile:1.7
 
-# --- Base stage: Python 3.14 + uv ---
-FROM python:3.14-slim AS base
+# --- Base stage: Bun on Debian slim ---
+FROM oven/bun:1-debian AS base
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=development
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md ./
+COPY package.json bun.lock ./
 
-# --- Dev stage: full deps, runOnSave for hot reload ---
+# --- Dev stage: full deps, Vite dev server with HMR ---
 FROM base AS dev
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --extra dev
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
-COPY src ./src
+COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --extra dev
+EXPOSE 5173
+CMD ["bun", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
 
-EXPOSE 8501
-CMD ["streamlit", "run", "src/app/app.py", \
-     "--server.address=0.0.0.0", \
-     "--server.port=8501", \
-     "--server.runOnSave=true", \
-     "--browser.gatherUsageStats=false"]
+# --- Build stage: produce static SPA into /app/build ---
+FROM base AS build
 
-# --- Prod stage: minimal deps, headless, source baked in ---
-FROM base AS prod
+ARG PUBLIC_API_URL=http://localhost:8000
+ENV PUBLIC_API_URL=${PUBLIC_API_URL} \
+    NODE_ENV=production
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
-COPY src ./src
+COPY . .
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+RUN bun run build
 
-EXPOSE 8501
-CMD ["streamlit", "run", "src/app/app.py", \
-     "--server.address=0.0.0.0", \
-     "--server.port=8501", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
+# --- Prod stage: nginx serving the prerendered static SPA ---
+FROM nginx:1.27-alpine AS prod
+
+COPY --from=build /app/build /usr/share/nginx/html
+
+RUN <<'EOF' cat > /etc/nginx/conf.d/default.conf
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+EOF
+
+EXPOSE 80
