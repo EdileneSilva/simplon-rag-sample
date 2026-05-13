@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # Ollama (local LLM)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_chat_model: str = "mistral-small3.2"
+    ollama_chat_model: str = "mistral:latest"
     ollama_small_chat_model: str = "mistral:latest"
     ollama_embed_model: str = "mxbai-embed-large"
 
