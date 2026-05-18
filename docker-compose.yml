@@ -38,7 +38,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_password}
       APP_ENV: development
       CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:4173,http://localhost:8501"
-      # Ollama runs on the host; api container reaches it via host.docker.internal.
       OLLAMA_BASE_URL: http://172.17.0.1:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -73,7 +72,31 @@ services:
       - ./frontend:/app
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Prometheus — collecte les métriques exposées par l'API sur /metrics
+  # Interface : http://localhost:9090
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: simplon_rag_prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   api_data_docs:
   api_data_eval:
+  prometheus_data:

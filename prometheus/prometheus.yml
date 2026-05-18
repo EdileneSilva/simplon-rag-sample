@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s      # Scrape toutes les 15 secondes
+  evaluation_interval: 15s  # Évalue les règles toutes les 15 secondes
+
+scrape_configs:
+  # API FastAPI — endpoint /metrics exposé par prometheus-client
+  - job_name: "simplon-rag-api"
+    static_configs:
+      - targets: ["api:8000"]
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Prometheus lui-même (utile pour déboguer)
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
