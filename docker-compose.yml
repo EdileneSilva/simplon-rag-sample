@@ -38,7 +38,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_password}
       APP_ENV: development
       CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:4173,http://localhost:8501"
-      # Ollama runs on the host; api container reaches it via host.docker.internal.
       OLLAMA_BASE_URL: http://172.17.0.1:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -55,6 +54,9 @@ services:
       retries: 10
       start_period: 30s
     restart: unless-stopped
+    networks:
+      - default
+      - observability
 
   frontend:
     build:
@@ -73,7 +75,61 @@ services:
       - ./frontend:/app
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Observability stack
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: simplon_rag_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      # Rétention 15 jours, suffisant pour le projet
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: simplon_rag_grafana
+    environment:
+      # Désactive l'auth en dev pour ne pas perdre de temps
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Timezone cohérente avec les logs
+      GF_DEFAULT_APP_MODE: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - observability
+
 volumes:
   pgdata:
   api_data_docs:
   api_data_eval:
+  prometheus_data:
+  grafana_data:
+
+# Le réseau observability est créé manuellement une seule fois :
+#   docker network create observability
+networks:
+  observability:
+    external: true
