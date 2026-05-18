@@ -1,11 +1,36 @@
 {
   "__inputs": [],
   "__requires": [
-    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
-    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
-    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
-    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
-    { "type": "panel", "id": "gauge", "name": "Gauge", "version": "" }
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "11.0.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "gauge",
+      "name": "Gauge",
+      "version": ""
+    }
   ],
   "description": "Vue d'ensemble de l'API RAG — métriques RED + métriques métier",
   "editable": true,
@@ -16,30 +41,63 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 100,
       "title": "🔴 RED — Rate · Errors · Duration",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
       "description": "Nombre de requêtes HTTP par seconde, par endpoint",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
           "unit": "reqps"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
       "id": 1,
-      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-          "expr": "sum by (handler) (rate(http_requests_total{job=\"simplon-rag-api\"}[$__rate_interval]))",
-          "legendFormat": "{{handler}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "sum by (endpoint) (rate(http_requests_total{job=\"simplon-rag-api\"}[$__rate_interval]))",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
       ],
@@ -47,31 +105,69 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
       "description": "Taux d'erreurs HTTP 5xx (% des requêtes totales)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "red" },
-          "custom": { "lineWidth": 2, "fillOpacity": 20 },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          },
           "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.01 },
-              { "color": "red", "value": 0.05 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
             ]
           }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
       "id": 2,
-      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-          "expr": "sum(rate(http_requests_total{job=\"simplon-rag-api\", status=~\"5..\"}[$__rate_interval])) / sum(rate(http_requests_total{job=\"simplon-rag-api\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "sum(rate(http_requests_total{job=\"simplon-rag-api\", status_code=~\"5..\"}[$__rate_interval])) / sum(rate(http_requests_total{job=\"simplon-rag-api\"}[$__rate_interval]))",
           "legendFormat": "Error rate",
           "refId": "A"
         }
@@ -80,34 +176,68 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
       "description": "Latence p50 / p95 / p99 toutes routes confondues",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2, "fillOpacity": 5 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5
+          },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
       "id": 3,
-      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
           "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C"
@@ -118,49 +248,95 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
       "id": 101,
       "title": "🤖 RAG — Métriques métier",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-      "description": "Distribution des routes prises par le guard (rag / escalade / hors-sujet)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
+      "description": "Distribution des décisions guard_route (in_scope / out_of_scope) par catégorie",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
       "id": 4,
-      "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-          "expr": "sum by (route) (increase(rag_guard_route_total{job=\"simplon-rag-api\"}[$__range]))",
-          "legendFormat": "{{route}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "sum by (decision, category) (increase(rag_guard_route_decisions_total{job=\"simplon-rag-api\"}[$__rate_interval]))",
+          "legendFormat": "{{decision}} / {{category}}",
           "refId": "A"
         }
       ],
-      "title": "Guard — Distribution des routes",
+      "title": "Guard — Distribution des décisions",
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-      "description": "Taux d'escalade vers un humain (% des conversations)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
+      "description": "Taux d'escalade vers un humain (% des conversations in_scope)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.1 },
-              { "color": "red", "value": 0.25 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.25
+              }
             ]
           },
           "min": 0,
@@ -168,13 +344,30 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
       "id": 5,
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "showThresholdLabels": false, "showThresholdMarkers": true },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-          "expr": "sum(increase(rag_guard_route_total{job=\"simplon-rag-api\", route=\"escalade\"}[$__range])) / sum(increase(rag_guard_route_total{job=\"simplon-rag-api\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "sum(increase(rag_escalations_total{job=\"simplon-rag-api\"}[$__range])) / sum(increase(rag_guard_route_decisions_total{job=\"simplon-rag-api\", decision=\"in_scope\"}[$__range]))",
           "legendFormat": "Taux d'escalade",
           "refId": "A"
         }
@@ -183,70 +376,207 @@
       "type": "gauge"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-      "description": "Score RAGAS moyen sur la fenêtre sélectionnée",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
+      "description": "Score d'évaluation moyen du nœud evaluate (0–10)",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "short",
-          "decimals": 3,
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 0.6 },
-              { "color": "green", "value": 0.8 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "green",
+                "value": 7
+              }
             ]
           },
           "min": 0,
-          "max": 1
+          "max": 10
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
       "id": 6,
-      "options": { "reduceOptions": { "calcs": ["mean"] }, "orientation": "auto", "showThresholdLabels": true, "showThresholdMarkers": true },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ]
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
-          "expr": "avg(rag_eval_score{job=\"simplon-rag-api\"})",
-          "legendFormat": "Score moyen",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(rag_eval_score_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
+          "legendFormat": "Score médian",
           "refId": "A"
         }
       ],
-      "title": "Score d'évaluation RAGAS",
+      "title": "Score d'évaluation — médiane",
       "type": "gauge"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 103,
+      "title": "⏱️ Latence par nœud LangGraph",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
+      "description": "Durée médiane (p50) de chaque nœud du graphe LangGraph",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le, node) (rate(rag_node_duration_seconds_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{node}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, node) (rate(rag_node_duration_seconds_bucket{job=\"simplon-rag-api\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{node}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Latence par nœud — p50 / p95",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
       "id": 102,
       "title": "🗄️ Infrastructure",
       "type": "row"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-simplon-rag"
+      },
       "description": "Cibles Prometheus actuellement UP",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 19 },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 28
+      },
       "id": 7,
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "none"
+      },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus-simplon-rag" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-simplon-rag"
+          },
           "expr": "count(up{job=\"simplon-rag-api\"} == 1)",
           "legendFormat": "API UP",
           "refId": "A"
@@ -258,9 +588,18 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["simplon", "rag", "observability"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "simplon",
+    "rag",
+    "observability"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "Europe/Paris",
   "title": "Simplon RAG — Overview",

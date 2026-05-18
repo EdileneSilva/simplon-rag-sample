@@ -1,19 +1,20 @@
 """
-Observability — Logging structuré JSON + propagation du request_id.
+Observabilité — Logging structuré JSON + propagation du request_id
+                + instrumentation métriques RED dans le middleware.
 
 Responsabilités :
 - setup_logging()       : configure python-json-logger sur le root logger
 - RequestIdFilter       : injecte le request_id courant dans chaque LogRecord
-- RequestIdMiddleware   : génère un UUID v4 par requête HTTP et le stocke dans
-                          le ContextVar, puis l'expose dans l'en-tête X-Request-Id
+- RequestIdMiddleware   : génère un UUID v4 par requête HTTP, le stocke dans
+                          le ContextVar, expose X-Request-Id dans la réponse,
+                          et enregistre les métriques RED Prometheus.
 
 RGPD : aucun champ de contenu conversationnel (user_message, answer, chunks)
-       ne doit transiter par le logger. Seuls des champs structurés non-nominatifs
-       (request_id, conversation_id, latency_ms, décisions catégorielles) sont
-       autorisés.
+       ne doit transiter par le logger.
 """
 
 import logging
+import time
 import uuid
 from contextvars import ContextVar
 from typing import Awaitable, Callable
@@ -23,25 +24,24 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from rag.observability.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+    normalize_endpoint,
+)
+
 # ---------------------------------------------------------------------------
-# ContextVar — partagé entre le middleware et tous les modules de l'application
+# ContextVar — partagé entre le middleware et tous les modules
 # ---------------------------------------------------------------------------
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
 
 # ---------------------------------------------------------------------------
-# Filtre logging — injecte le request_id dans chaque LogRecord
+# Filtre logging
 # ---------------------------------------------------------------------------
 
 class RequestIdFilter(logging.Filter):
-    """Ajoute le champ ``request_id`` à chaque enregistrement de log.
-
-    Le filtre est attaché au StreamHandler ; il lit le ContextVar à l'instant
-    de l'émission du log, ce qui garantit la propagation correcte dans un
-    contexte asyncio (chaque tâche hérite d'une copie du contexte).
-    """
-
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_var.get("")
         return True
@@ -52,26 +52,8 @@ class RequestIdFilter(logging.Filter):
 # ---------------------------------------------------------------------------
 
 def setup_logging(level: str = "INFO") -> None:
-    """Initialise le logging JSON structuré pour toute l'application.
-
-    À appeler une seule fois, au démarrage du processus (avant la création
-    de l'app FastAPI), pour que tous les loggers héritent de la configuration.
-
-    Format JSON produit (exemple) :
-        {
-          "timestamp": "2025-05-13T08:42:01.123456",
-          "level": "INFO",
-          "logger": "rag.rag.agent.nodes",
-          "message": "guard_route.decision",
-          "request_id": "550e8400-e29b-41d4-a716-446655440000",
-          "conversation_id": "3fa85f64-...",
-          "in_scope": true,
-          "category": "admission",
-          "latency_ms": 342.7
-        }
-    """
+    """Initialise le logging JSON structuré pour toute l'application."""
     handler = logging.StreamHandler()
-
     formatter = JsonFormatter(
         fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
         rename_fields={
@@ -86,34 +68,31 @@ def setup_logging(level: str = "INFO") -> None:
 
     root = logging.getLogger()
     root.setLevel(level)
-    # Supprimer les handlers existants (par ex. le handler par défaut de Python
-    # ou ceux ajoutés par uvicorn lors d'un rechargement).
     root.handlers.clear()
     root.addHandler(handler)
 
-    # Propager le filtre request_id aux loggers uvicorn déjà créés
     for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         uv_logger = logging.getLogger(name)
-        # Ne pas ajouter de doublon
         if not any(isinstance(f, RequestIdFilter) for f in uv_logger.filters):
             uv_logger.addFilter(RequestIdFilter())
 
 
 # ---------------------------------------------------------------------------
-# Middleware FastAPI/Starlette
+# Middleware
 # ---------------------------------------------------------------------------
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
-    """Génère un UUID v4 pour chaque requête HTTP entrante.
+    """Génère un request_id par requête, propage dans les logs et les métriques.
 
-    - Stocke le request_id dans ``request_id_var`` (ContextVar asyncio).
-    - Expose le request_id dans l'en-tête de réponse ``X-Request-Id``.
-    - Réinitialise le ContextVar après la réponse (reset du token Starlette).
+    Instrumentation RED :
+    - http_requests_total{method, endpoint, status_code} — incrémenté à chaque fin
+    - http_request_duration_seconds{method, endpoint} — observé à chaque fin
 
-    Note : BaseHTTPMiddleware crée une sous-tâche asyncio par requête, qui
-    hérite automatiquement du contexte parent. Le reset via token garantit
-    qu'aucune fuite de request_id ne se produit entre requêtes.
+    Le healthcheck est instrumenté mais son request_id n'est pas loggué pour
+    réduire le bruit (volume élevé, latence quasi-nulle).
     """
+
+    SILENT_PATHS = {"/api/v1/health", "/metrics"}
 
     async def dispatch(
         self,
@@ -123,36 +102,63 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         req_id = str(uuid.uuid4())
         token = request_id_var.set(req_id)
 
+        endpoint = normalize_endpoint(request.url.path)
+        method = request.method
+        silent = request.url.path in self.SILENT_PATHS
+
         logger = logging.getLogger(__name__)
-        logger.info(
-            "request.start",
-            extra={
-                "http_method": request.method,
-                "http_path": request.url.path,
-            },
-        )
+
+        if not silent:
+            logger.info(
+                "request.start",
+                extra={"http_method": method, "http_path": request.url.path},
+            )
+
+        t0 = time.perf_counter()
 
         try:
             response = await call_next(request)
+
+            duration = time.perf_counter() - t0
+            status = str(response.status_code)
+
+            # --- Métriques RED ---
+            HTTP_REQUESTS_TOTAL.labels(
+                method=method, endpoint=endpoint, status_code=status
+            ).inc()
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=method, endpoint=endpoint
+            ).observe(duration)
+
+            response.headers["X-Request-Id"] = req_id
+
+            if not silent:
+                logger.info(
+                    "request.end",
+                    extra={
+                        "http_method": method,
+                        "http_path": request.url.path,
+                        "http_status": response.status_code,
+                        "duration_ms": round(duration * 1000, 2),
+                    },
+                )
+
+            return response
+
         except Exception:
+            duration = time.perf_counter() - t0
+            HTTP_REQUESTS_TOTAL.labels(
+                method=method, endpoint=endpoint, status_code="500"
+            ).inc()
+            HTTP_REQUEST_DURATION_SECONDS.labels(
+                method=method, endpoint=endpoint
+            ).observe(duration)
+
             logger.exception(
                 "request.unhandled_exception",
-                extra={
-                    "http_method": request.method,
-                    "http_path": request.url.path,
-                },
+                extra={"http_method": method, "http_path": request.url.path},
             )
             raise
+
         finally:
             request_id_var.reset(token)
-
-        response.headers["X-Request-Id"] = req_id
-        logger.info(
-            "request.end",
-            extra={
-                "http_method": request.method,
-                "http_path": request.url.path,
-                "http_status": response.status_code,
-            },
-        )
-        return response

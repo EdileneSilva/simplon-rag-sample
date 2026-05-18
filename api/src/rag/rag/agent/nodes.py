@@ -1,10 +1,14 @@
 """
 Agent LangGraph — nœuds instrumentés pour l'observabilité.
 
-Règles RGPD appliquées :
-- user_message, answer, retrieved_chunks.content ne sont JAMAIS loggés.
-- Seuls les champs catégoriels, métriques et identifiants non-nominatifs
-  (conversation_id, request_id via ContextVar, latency_ms) sont émis.
+Chaque nœud :
+1. Mesure sa durée avec time.perf_counter().
+2. Émet un log structuré JSON (sans PII).
+3. Enregistre les métriques Prometheus correspondantes.
+
+Règles RGPD :
+- user_message, answer, retrieved_chunks.content ne sont JAMAIS loggés ni
+  présents dans les labels de métriques.
 """
 
 import json
@@ -19,6 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag.config.settings import get_settings
 from rag.db.models.conversation import Conversation, Message
+from rag.observability import (
+    RAG_CHUNKS_RETRIEVED,
+    RAG_ESCALATIONS_TOTAL,
+    RAG_EVAL_SCORE,
+    RAG_GUARD_ROUTE_DECISIONS_TOTAL,
+    RAG_NODE_DURATION_SECONDS,
+    RAG_RETRIES_TOTAL,
+)
 from rag.rag.agent.prompts import (
     ESCALATION_RESPONSE,
     EVALUATOR_PROMPT,
@@ -39,7 +51,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _extract_json(content: str) -> str:
-    """Strip markdown code fences and extract the first JSON object from LLM output."""
     content = content.strip()
     match = re.search(r"\{.*\}", content, re.DOTALL)
     return match.group(0) if match else content
@@ -54,11 +65,10 @@ def _get_llm(settings=None, model: str | None = None) -> ChatOllama:
 
 
 # ---------------------------------------------------------------------------
-# Nœuds du graphe
+# Nœuds
 # ---------------------------------------------------------------------------
 
 async def load_history(state: AgentState, db: AsyncSession) -> dict:
-    """Load previous messages for this conversation from the DB."""
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == state["conversation_id"])
@@ -70,7 +80,6 @@ async def load_history(state: AgentState, db: AsyncSession) -> dict:
     lc_messages: list = [
         SystemMessage(content=SYSTEM_PROMPT.format(product_name=settings.product_name))
     ]
-
     for msg in db_messages:
         if msg.role == "user":
             lc_messages.append(HumanMessage(content=msg.content))
@@ -82,16 +91,6 @@ async def load_history(state: AgentState, db: AsyncSession) -> dict:
 
 
 async def guard_route(state: AgentState) -> dict:
-    """Single LLM call that decides scope and retrieval routing simultaneously.
-
-    Returns:
-        - in_scope=False + answer: short-circuits to save_turn (out-of-scope rejection)
-        - in_scope=True + needs_retrieval=True: pipeline continues to retrieve
-        - in_scope=True + needs_retrieval=False: pipeline continues to generate
-
-    Fails open (in_scope=True, needs_retrieval=True) on any JSON parsing error
-    to avoid false negatives.
-    """
     t0 = time.perf_counter()
 
     settings = get_settings()
@@ -101,6 +100,7 @@ async def guard_route(state: AgentState) -> dict:
         user_message=state["user_message"],
     )
     response = await llm.ainvoke([HumanMessage(content=prompt)])
+
     try:
         data = json.loads(_extract_json(response.content))
         in_scope = bool(data.get("in_scope", True))
@@ -111,9 +111,15 @@ async def guard_route(state: AgentState) -> dict:
         needs_retrieval = True
         category = ""
 
-    latency_ms = (time.perf_counter() - t0) * 1000
+    duration = time.perf_counter() - t0
 
     if not in_scope:
+        # --- Métriques ---
+        RAG_GUARD_ROUTE_DECISIONS_TOTAL.labels(
+            decision="out_of_scope", category="out_of_scope"
+        ).inc()
+        RAG_NODE_DURATION_SECONDS.labels(node="guard_route").observe(duration)
+
         logger.info(
             "guard_route.decision",
             extra={
@@ -122,7 +128,7 @@ async def guard_route(state: AgentState) -> dict:
                 "in_scope": False,
                 "category": "out_of_scope",
                 "needs_retrieval": False,
-                "latency_ms": round(latency_ms, 2),
+                "latency_ms": round(duration * 1000, 2),
             },
         )
         return {
@@ -133,6 +139,12 @@ async def guard_route(state: AgentState) -> dict:
             "sources": [],
         }
 
+    # --- Métriques ---
+    RAG_GUARD_ROUTE_DECISIONS_TOTAL.labels(
+        decision="in_scope", category=category or "unknown"
+    ).inc()
+    RAG_NODE_DURATION_SECONDS.labels(node="guard_route").observe(duration)
+
     logger.info(
         "guard_route.decision",
         extra={
@@ -141,27 +153,26 @@ async def guard_route(state: AgentState) -> dict:
             "in_scope": True,
             "category": category,
             "needs_retrieval": needs_retrieval,
-            "latency_ms": round(latency_ms, 2),
+            "latency_ms": round(duration * 1000, 2),
         },
     )
     return {"in_scope": True, "needs_retrieval": needs_retrieval, "category": category}
 
 
 async def retrieve(state: AgentState, db: AsyncSession) -> dict:
-    """Retrieve relevant chunks from pgvector.
-
-    Uses rewrite_suggestion as the search query when available (rewrite path),
-    otherwise falls back to the original user_message.
-    """
     t0 = time.perf_counter()
 
-    # Pas de log de la requête (contenu utilisateur) — RGPD
     using_rewrite = bool(state.get("rewrite_suggestion"))
     chunks = await pgvector_retriever.similarity_search(
         state.get("rewrite_suggestion") or state["user_message"], db
     )
 
-    latency_ms = (time.perf_counter() - t0) * 1000
+    duration = time.perf_counter() - t0
+
+    # --- Métriques ---
+    RAG_CHUNKS_RETRIEVED.observe(len(chunks))
+    RAG_NODE_DURATION_SECONDS.labels(node="retrieve").observe(duration)
+
     logger.info(
         "retrieve.done",
         extra={
@@ -169,24 +180,13 @@ async def retrieve(state: AgentState, db: AsyncSession) -> dict:
             "node": "retrieve",
             "chunks_retrieved": len(chunks),
             "using_rewrite": using_rewrite,
-            "latency_ms": round(latency_ms, 2),
+            "latency_ms": round(duration * 1000, 2),
         },
     )
     return {"retrieved_chunks": chunks}
 
 
 async def generate(state: AgentState) -> dict:
-    """Generate an answer using the local Ollama chat model, with optional retrieved context.
-
-    The previous turns of the conversation are reused as structured messages
-    (HumanMessage / AIMessage) rather than flattened into the system prompt,
-    so the LLM keeps a clear turn-by-turn structure and prompt caching stays
-    effective.
-
-    The generated AIMessage is intentionally NOT appended to ``state["messages"]``:
-    on a rewrite loop, a failed first answer would otherwise pollute the history
-    fed to the second generation pass.
-    """
     t0 = time.perf_counter()
     llm = _get_llm()
 
@@ -217,8 +217,11 @@ async def generate(state: AgentState) -> dict:
         sources = []
 
     response = await llm.ainvoke(messages_to_send)
+    duration = time.perf_counter() - t0
 
-    latency_ms = (time.perf_counter() - t0) * 1000
+    # --- Métriques ---
+    RAG_NODE_DURATION_SECONDS.labels(node="generate").observe(duration)
+
     logger.info(
         "generate.done",
         extra={
@@ -226,27 +229,13 @@ async def generate(state: AgentState) -> dict:
             "node": "generate",
             "has_context": has_context,
             "sources_count": len(sources),
-            "latency_ms": round(latency_ms, 2),
+            "latency_ms": round(duration * 1000, 2),
         },
     )
-    return {
-        "answer": response.content,
-        "sources": sources,
-    }
+    return {"answer": response.content, "sources": sources}
 
 
 async def evaluate(state: AgentState) -> dict:
-    """Evaluate the quality of the generated answer and decide routing.
-
-    Scores 0-10 across relevance, completeness, grounding, and clarity.
-    - score >= 7 → "answer": send to user
-    - score 4-6  → "rewrite": retry retrieval with a reformulated query
-    - score < 4  → "escalate": hand off to human support
-
-    Increments retry_count each call. If retry_count reaches 2, forces escalation
-    regardless of score to prevent infinite loops.
-    Fails open ("answer") on any JSON parsing error.
-    """
     t0 = time.perf_counter()
     settings = get_settings()
     llm = _get_llm(settings, model=settings.ollama_small_chat_model)
@@ -262,6 +251,7 @@ async def evaluate(state: AgentState) -> dict:
         answer=state.get("answer", ""),
     )
     response = await llm.ainvoke([HumanMessage(content=prompt)])
+
     try:
         data = json.loads(_extract_json(response.content))
         score = float(data.get("score", 10))
@@ -273,7 +263,13 @@ async def evaluate(state: AgentState) -> dict:
         rewrite_suggestion = ""
 
     retry_count = state.get("retry_count", 0) + 1
-    latency_ms = (time.perf_counter() - t0) * 1000
+    duration = time.perf_counter() - t0
+
+    # --- Métriques ---
+    RAG_EVAL_SCORE.observe(score)
+    RAG_NODE_DURATION_SECONDS.labels(node="evaluate").observe(duration)
+    if decision == "rewrite":
+        RAG_RETRIES_TOTAL.inc()
 
     log_level = logging.WARNING if decision in ("rewrite", "escalate") else logging.INFO
     logger.log(
@@ -285,7 +281,7 @@ async def evaluate(state: AgentState) -> dict:
             "score": round(score, 2),
             "decision": decision,
             "retry_count": retry_count,
-            "latency_ms": round(latency_ms, 2),
+            "latency_ms": round(duration * 1000, 2),
         },
     )
     return {
@@ -297,8 +293,12 @@ async def evaluate(state: AgentState) -> dict:
 
 
 async def escalate(state: AgentState) -> dict:
-    """Set a human-escalation answer when the evaluator cannot find a satisfactory response."""
     settings = get_settings()
+
+    # --- Métriques ---
+    RAG_ESCALATIONS_TOTAL.inc()
+    RAG_NODE_DURATION_SECONDS.labels(node="escalate").observe(0.0)
+
     logger.warning(
         "escalate.triggered",
         extra={
@@ -317,7 +317,6 @@ async def escalate(state: AgentState) -> dict:
 
 
 async def save_turn(state: AgentState, db: AsyncSession) -> dict:
-    """Persist user message and assistant answer to the DB."""
     user_msg = Message(
         conversation_id=state["conversation_id"],
         role="user",
@@ -331,7 +330,6 @@ async def save_turn(state: AgentState, db: AsyncSession) -> dict:
     )
     db.add_all([user_msg, assistant_msg])
 
-    # Update conversation.updated_at
     result = await db.execute(
         select(Conversation).where(Conversation.id == state["conversation_id"])
     )
