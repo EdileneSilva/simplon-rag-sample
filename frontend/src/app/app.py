@@ -12,44 +12,27 @@ from pythonjsonlogger.json import JsonFormatter
 from app.api_client import create_conversation, send_message
 from app.config import API_BASE_URL
 
-# ---------------------------------------------------------------------------
-# Logging JSON structuré — frontend
-# Appelé une fois au démarrage du module (Streamlit ré-exécute le script
-# à chaque interaction, mais l'état du module est conservé dans le process).
-# ---------------------------------------------------------------------------
 
-def _setup_frontend_logging() -> logging.Logger:
-    """Configure un logger JSON structuré pour le frontend Streamlit.
+import logging
+from pythonjsonlogger.json import JsonFormatter
 
-    Règles RGPD : le contenu des messages utilisateur et des réponses
-    de l'API ne doit JAMAIS apparaître dans les logs.
-    """
+def _setup_frontend_logging():
     handler = logging.StreamHandler()
-    handler.setFormatter(
-        JsonFormatter(
-            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
-            rename_fields={
-                "asctime": "timestamp",
-                "levelname": "level",
-                "name": "logger",
-            },
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        )
-    )
-    frontend_logger = logging.getLogger("simplon.frontend")
-    if not frontend_logger.handlers:          # éviter les doublons lors des reruns Streamlit
+    handler.setFormatter(JsonFormatter(
+        fmt='%(asctime)s %(levelname)s %(name)s %(message)s',
+        rename_fields={'asctime': 'timestamp', 'levelname': 'level', 'name': 'logger'},
+        datefmt='%Y-%m-%dT%H:%M:%S',
+    ))
+    frontend_logger = logging.getLogger('simplon.frontend')
+    if not frontend_logger.handlers:
         frontend_logger.addHandler(handler)
         frontend_logger.setLevel(logging.INFO)
-        frontend_logger.propagate = False     # ne pas remonter au root logger uvicorn-free
+        frontend_logger.propagate = False
     return frontend_logger
-
 
 _log = _setup_frontend_logging()
 
-# ---------------------------------------------------------------------------
-# Simplon brand palette
-# ---------------------------------------------------------------------------
-
+# --- Simplon brand palette (https://brandfetch.com/simplon.co) ---
 SIMPLON_RED = "#CE0033"
 SIMPLON_CORAL = "#F26F5C"
 SIMPLON_TEAL = "#123744"
@@ -65,7 +48,7 @@ st.set_page_config(
     layout="centered",
 )
 
-# --- Brand CSS ---
+# --- Brand CSS: Inter font + Simplon palette on chat bubbles, accents, sources ---
 _USER_BUBBLE = "[data-testid=\"stChatMessage\"]:has([data-testid=\"chatAvatarIcon-user\"]) [data-testid=\"stChatMessageContent\"]"  # noqa: E501
 _ASST_BUBBLE = "[data-testid=\"stChatMessage\"]:has([data-testid=\"chatAvatarIcon-assistant\"]) [data-testid=\"stChatMessageContent\"]"  # noqa: E501
 st.markdown(
@@ -79,6 +62,7 @@ st.markdown(
         font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
     }}
 
+    /* Bubble — user (filled red) */
     {_USER_BUBBLE} {{
         background-color: {SIMPLON_RED} !important;
         color: #FFFFFF !important;
@@ -86,6 +70,7 @@ st.markdown(
         padding: 0.75rem 1rem;
     }}
 
+    /* Bubble — assistant (cream, teal text, coral left rule) */
     {_ASST_BUBBLE} {{
         background-color: {SIMPLON_CREAM} !important;
         color: {SIMPLON_TEAL} !important;
@@ -94,6 +79,7 @@ st.markdown(
         border-left: 3px solid {SIMPLON_CORAL};
     }}
 
+    /* Sources expander */
     [data-testid="stExpander"] summary {{
         color: {SIMPLON_TEAL} !important;
     }}
@@ -101,6 +87,7 @@ st.markdown(
         color: {SIMPLON_CORAL} !important;
     }}
 
+    /* Chat input focus ring picks up primary */
     [data-testid="stChatInput"] textarea:focus {{
         border-color: {SIMPLON_RED} !important;
         box-shadow: 0 0 0 1px {SIMPLON_RED} !important;
@@ -110,7 +97,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Header ---
+# --- Header: inline SVG logo + tagline + coral rule ---
 st.markdown(
     f"""
     <div style="display:flex; flex-direction:column; align-items:center;

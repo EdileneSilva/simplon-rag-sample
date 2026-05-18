@@ -73,26 +73,43 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # Prometheus — collecte les métriques exposées par l'API sur /metrics
-  # Interface : http://localhost:9090
+  # Observability stack
   # ---------------------------------------------------------------------------
   prometheus:
-    image: prom/prometheus:v2.52.0
+    image: prom/prometheus:v3.4.0
     container_name: simplon_rag_prometheus
-    depends_on:
-      api:
-        condition: service_healthy
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      
-      - "--storage.tsdb.retention.time=15d"
-      - "--web.enable-lifecycle"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: simplon_rag_grafana
+    environment:
+      # Auth désactivée en dev pour ne pas perdre de temps
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DEFAULT_APP_MODE: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
     restart: unless-stopped
 
 volumes:
@@ -100,3 +117,4 @@ volumes:
   api_data_docs:
   api_data_eval:
   prometheus_data:
+  grafana_data:

@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus-simplon-rag
+    # Sur le réseau Docker "observability", Grafana atteint Prometheus par son nom de service
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"          # Doit correspondre à scrape_interval dans prometheus.yml
+      httpMethod: POST
+      exemplarTraceIdDestinations: []
