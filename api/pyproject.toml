@@ -32,6 +32,8 @@ dependencies = [
     "python-json-logger>=3.2",
     "pyjwt>=2.12.1",
     "prometheus-client>=0.20",
+    "langchain-mistralai>=0.2",
+    "mistralai>=1.0",
 ]
 
 [project.optional-dependencies]

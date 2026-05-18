@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     ollama_small_chat_model: str = "mistral:latest"
     ollama_embed_model: str = "mxbai-embed-large"
 
+    # Mistral AI
+    mistral_api_key: str
+
     # PostgreSQL
     postgres_host: str = "localhost"
     postgres_port: int = 5432

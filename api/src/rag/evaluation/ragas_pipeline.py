@@ -56,29 +56,10 @@ async def run_evaluation(
         contexts.append([c["content"] for c in state.get("retrieved_chunks", [])] or [""])
         ground_truths.append(sample.ground_truth)
 
-    # Lazy imports to keep ragas off the FastAPI startup path
+    # Lazy imports to avoid ragas/mistralai version conflict at app startup
     from datasets import Dataset  # noqa: PLC0415
-    from langchain_ollama import ChatOllama, OllamaEmbeddings  # noqa: PLC0415
     from ragas import evaluate  # noqa: PLC0415
-    from ragas.llms import LangchainLLMWrapper  # noqa: PLC0415
-    from ragas.embeddings import LangchainEmbeddingsWrapper  # noqa: PLC0415
     from ragas.metrics import answer_relevancy, context_recall, faithfulness  # noqa: PLC0415
-
-    from rag.config.settings import get_settings  # noqa: PLC0415
-
-    settings = get_settings()
-    judge_llm = LangchainLLMWrapper(
-        ChatOllama(
-            model=settings.ollama_chat_model,
-            base_url=settings.ollama_base_url,
-        )
-    )
-    judge_embed = LangchainEmbeddingsWrapper(
-        OllamaEmbeddings(
-            model=settings.ollama_embed_model,
-            base_url=settings.ollama_base_url,
-        )
-    )
 
     dataset = Dataset.from_dict(
         {
@@ -89,12 +70,7 @@ async def run_evaluation(
         }
     )
 
-    result = evaluate(
-        dataset,
-        metrics=[faithfulness, answer_relevancy, context_recall],
-        llm=judge_llm,
-        embeddings=judge_embed,
-    )
+    result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_recall])
     scores = result.to_pandas().mean(numeric_only=True).to_dict()
 
     return EvaluationResult(
