@@ -6,8 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Mistral AI
-    mistral_api_key: str
+    # Ollama (local LLM)
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_chat_model: str = "mistral:latest"
+    ollama_small_chat_model: str = "mistral:latest"
+    ollama_embed_model: str = "mxbai-embed-large"
 
     # PostgreSQL
     postgres_host: str = "localhost"

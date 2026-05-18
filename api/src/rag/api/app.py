@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from rag.api.routers import chat, eval, health, ingestion
 from rag.db.session import engine
+from rag.observability import RequestIdMiddleware
 
 
 @asynccontextmanager
@@ -19,6 +20,12 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # -----------------------------------------------------------------------
+    # Middleware — ordre important : RequestIdMiddleware en premier pour que
+    # le request_id soit disponible dans tous les middlewares suivants.
+    # -----------------------------------------------------------------------
+    app.add_middleware(RequestIdMiddleware)
 
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(ingestion.router, prefix="/api/v1")

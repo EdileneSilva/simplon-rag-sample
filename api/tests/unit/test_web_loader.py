@@ -7,7 +7,6 @@ from rag.rag.ingestion.web_loader import load_url
 
 def test_default_web_max_pages():
     with patch.dict("os.environ", {
-        "MISTRAL_API_KEY": "x",
         "POSTGRES_PASSWORD": "x",
     }):
         s = Settings()
@@ -16,7 +15,6 @@ def test_default_web_max_pages():
 
 def test_web_max_pages_override():
     with patch.dict("os.environ", {
-        "MISTRAL_API_KEY": "x",
         "POSTGRES_PASSWORD": "x",
         "WEB_MAX_PAGES": "50",
     }):

@@ -38,10 +38,10 @@ async def db_session(setup_test_db) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture
 def mock_embeddings():
-    """Return fixed-dimension zero vectors instead of calling Mistral."""
+    """Return fixed-dimension zero vectors instead of calling the local Ollama embed model."""
     dummy = [[0.0] * 1024]
-    with patch("rag.rag.embeddings.mistral_embeddings.embed_documents", new=AsyncMock(return_value=dummy)), \
-         patch("rag.rag.embeddings.mistral_embeddings.embed_query", new=AsyncMock(return_value=[0.0] * 1024)):
+    with patch("rag.rag.embeddings.ollama_embeddings.embed_documents", new=AsyncMock(return_value=dummy)), \
+         patch("rag.rag.embeddings.ollama_embeddings.embed_query", new=AsyncMock(return_value=[0.0] * 1024)):
         yield
 
 

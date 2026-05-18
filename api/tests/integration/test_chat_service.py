@@ -17,7 +17,7 @@ from rag.rag.chat_service import ChatService, ConversationNotFoundError
 
 
 def _llm(content: str) -> MagicMock:
-    """Fake ChatMistralAI whose ainvoke returns `content`."""
+    """Fake ChatOllama whose ainvoke returns `content`."""
     mock = MagicMock()
     mock.ainvoke = AsyncMock(return_value=MagicMock(content=content))
     return mock

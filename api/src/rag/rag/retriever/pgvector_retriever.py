@@ -4,7 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag.config.settings import get_settings
-from rag.rag.embeddings import mistral_embeddings
+from rag.rag.embeddings import ollama_embeddings
 
 
 async def similarity_search(
@@ -19,7 +19,7 @@ async def similarity_search(
     settings = get_settings()
     top_k = k or settings.retrieval_top_k
 
-    query_embedding = await mistral_embeddings.embed_query(query)
+    query_embedding = await ollama_embeddings.embed_query(query)
 
     sql = text("""
         SELECT

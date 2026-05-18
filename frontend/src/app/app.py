@@ -1,10 +1,13 @@
+import logging
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import httpx
 import streamlit as st
+from pythonjsonlogger.json import JsonFormatter
 
 from app.api_client import create_conversation, send_message
 from app.config import API_BASE_URL
@@ -91,18 +94,29 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Session initialisation ---
+# ---------------------------------------------------------------------------
+# Session initialisation
+# ---------------------------------------------------------------------------
+
 if "conversation_id" not in st.session_state:
     try:
-        st.session_state.conversation_id = create_conversation(API_BASE_URL)
+        conv_id = create_conversation(API_BASE_URL)
+        st.session_state.conversation_id = conv_id
         st.session_state.messages = []
+        _log.info(
+            "conversation.created",
+            extra={"conversation_id": str(conv_id), "api_base_url": API_BASE_URL},
+        )
     except (httpx.ConnectError, httpx.ConnectTimeout):
-        st.error("Impossible de joindre l'API. Vérifiez que le serveur FastAPI est démarré.")  # noqa: E501
+        _log.error("api.unreachable", extra={"api_base_url": API_BASE_URL})
+        st.error("Impossible de joindre l'API. Vérifiez que le serveur FastAPI est démarré.")
         st.stop()
     except httpx.ReadTimeout:
+        _log.error("api.read_timeout", extra={"api_base_url": API_BASE_URL})
         st.error("L'API a mis trop de temps à répondre. Rafraîchissez la page pour réessayer.")
         st.stop()
     except Exception:
+        _log.exception("conversation.creation_failed", extra={"api_base_url": API_BASE_URL})
         st.error("Erreur inattendue lors de la création de la conversation.")
         st.stop()
 
@@ -115,28 +129,58 @@ for msg in st.session_state.messages:
                 for chunk_id in msg["sources"]:
                     st.caption(f"Chunk : {chunk_id}")
 
-# --- Handle new user input ---
+# ---------------------------------------------------------------------------
+# Handle new user input
+# ---------------------------------------------------------------------------
+
 if prompt := st.chat_input("Posez votre question…"):
+    conv_id = st.session_state.conversation_id
     st.session_state.messages.append({"role": "user", "content": prompt, "sources": []})
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         content: str = ""
         sources: list[str] = []
+
         with st.spinner("Génération en cours…"):
+            t0 = time.perf_counter()
             try:
-                response = send_message(
-                    API_BASE_URL,
-                    st.session_state.conversation_id,
-                    prompt,
-                )
+                response = send_message(API_BASE_URL, conv_id, prompt)
+                latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+
                 content = response["content"] or "Aucune réponse reçue."
                 sources = response.get("sources", [])
+
+                # Log de résultat — SANS le contenu du message ni de la réponse
+                _log.info(
+                    "message.sent",
+                    extra={
+                        "conversation_id": str(conv_id),
+                        "sources_count": len(sources),
+                        "latency_ms": latency_ms,
+                    },
+                )
+
             except httpx.HTTPStatusError as e:
+                latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                _log.error(
+                    "api.http_error",
+                    extra={
+                        "conversation_id": str(conv_id),
+                        "status_code": e.response.status_code,
+                        "latency_ms": latency_ms,
+                    },
+                )
                 st.error(f"Erreur API : {e.response.status_code}")
                 st.stop()
             except httpx.ReadTimeout:
+                latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                _log.error(
+                    "api.read_timeout",
+                    extra={"conversation_id": str(conv_id), "latency_ms": latency_ms},
+                )
                 st.error(
                     "L'API n'a pas répondu dans le délai imparti. La requête est "
                     "peut-être encore en cours côté serveur — réessayez dans un "
@@ -144,9 +188,17 @@ if prompt := st.chat_input("Posez votre question…"):
                 )
                 st.stop()
             except (httpx.ConnectError, httpx.ConnectTimeout):
+                _log.error(
+                    "api.unreachable",
+                    extra={"conversation_id": str(conv_id), "api_base_url": API_BASE_URL},
+                )
                 st.error("Impossible de joindre l'API (connexion refusée).")
                 st.stop()
             except Exception:
+                _log.exception(
+                    "api.unexpected_error",
+                    extra={"conversation_id": str(conv_id)},
+                )
                 st.error("Erreur inattendue lors de l'appel à l'API.")
                 st.stop()
 

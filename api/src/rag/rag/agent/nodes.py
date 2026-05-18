@@ -1,11 +1,24 @@
+"""
+Agent LangGraph — nœuds instrumentés pour l'observabilité.
+
+Règles RGPD appliquées :
+- user_message, answer, retrieved_chunks.content ne sont JAMAIS loggés.
+- Seuls les champs catégoriels, métriques et identifiants non-nominatifs
+  (conversation_id, request_id via ContextVar, latency_ms) sont émis.
+"""
+
 import json
+import logging
 import re
+import time
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_mistralai import ChatMistralAI
+from langchain_ollama import ChatOllama
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rag.config.settings import get_settings
+from rag.db.models.conversation import Conversation, Message
 from rag.rag.agent.prompts import (
     ESCALATION_RESPONSE,
     EVALUATOR_PROMPT,
@@ -16,10 +29,14 @@ from rag.rag.agent.prompts import (
     SYSTEM_PROMPT,
 )
 from rag.rag.agent.state import AgentState
-from rag.config.settings import get_settings
-from rag.db.models.conversation import Conversation, Message
 from rag.rag.retriever import pgvector_retriever
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers internes
+# ---------------------------------------------------------------------------
 
 def _extract_json(content: str) -> str:
     """Strip markdown code fences and extract the first JSON object from LLM output."""
@@ -28,10 +45,17 @@ def _extract_json(content: str) -> str:
     return match.group(0) if match else content
 
 
-def _get_llm(settings=None, model: str = "mistral-large-latest") -> ChatMistralAI:
+def _get_llm(settings=None, model: str | None = None) -> ChatOllama:
     s = settings or get_settings()
-    return ChatMistralAI(model=model, api_key=s.mistral_api_key)
+    return ChatOllama(
+        model=model or s.ollama_chat_model,
+        base_url=s.ollama_base_url,
+    )
 
+
+# ---------------------------------------------------------------------------
+# Nœuds du graphe
+# ---------------------------------------------------------------------------
 
 async def load_history(state: AgentState, db: AsyncSession) -> dict:
     """Load previous messages for this conversation from the DB."""
@@ -68,8 +92,10 @@ async def guard_route(state: AgentState) -> dict:
     Fails open (in_scope=True, needs_retrieval=True) on any JSON parsing error
     to avoid false negatives.
     """
+    t0 = time.perf_counter()
+
     settings = get_settings()
-    llm = _get_llm(settings, model="mistral-small-latest")
+    llm = _get_llm(settings, model=settings.ollama_small_chat_model)
     prompt = GUARD_ROUTE_PROMPT.format(
         product_name=settings.product_name,
         user_message=state["user_message"],
@@ -85,7 +111,20 @@ async def guard_route(state: AgentState) -> dict:
         needs_retrieval = True
         category = ""
 
+    latency_ms = (time.perf_counter() - t0) * 1000
+
     if not in_scope:
+        logger.info(
+            "guard_route.decision",
+            extra={
+                "conversation_id": str(state["conversation_id"]),
+                "node": "guard_route",
+                "in_scope": False,
+                "category": "out_of_scope",
+                "needs_retrieval": False,
+                "latency_ms": round(latency_ms, 2),
+            },
+        )
         return {
             "in_scope": False,
             "needs_retrieval": False,
@@ -94,6 +133,17 @@ async def guard_route(state: AgentState) -> dict:
             "sources": [],
         }
 
+    logger.info(
+        "guard_route.decision",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "guard_route",
+            "in_scope": True,
+            "category": category,
+            "needs_retrieval": needs_retrieval,
+            "latency_ms": round(latency_ms, 2),
+        },
+    )
     return {"in_scope": True, "needs_retrieval": needs_retrieval, "category": category}
 
 
@@ -103,13 +153,30 @@ async def retrieve(state: AgentState, db: AsyncSession) -> dict:
     Uses rewrite_suggestion as the search query when available (rewrite path),
     otherwise falls back to the original user_message.
     """
-    query = state.get("rewrite_suggestion") or state["user_message"]
-    chunks = await pgvector_retriever.similarity_search(query, db)
+    t0 = time.perf_counter()
+
+    # Pas de log de la requête (contenu utilisateur) — RGPD
+    using_rewrite = bool(state.get("rewrite_suggestion"))
+    chunks = await pgvector_retriever.similarity_search(
+        state.get("rewrite_suggestion") or state["user_message"], db
+    )
+
+    latency_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "retrieve.done",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "retrieve",
+            "chunks_retrieved": len(chunks),
+            "using_rewrite": using_rewrite,
+            "latency_ms": round(latency_ms, 2),
+        },
+    )
     return {"retrieved_chunks": chunks}
 
 
 async def generate(state: AgentState) -> dict:
-    """Generate an answer using Mistral, with optional retrieved context.
+    """Generate an answer using the local Ollama chat model, with optional retrieved context.
 
     The previous turns of the conversation are reused as structured messages
     (HumanMessage / AIMessage) rather than flattened into the system prompt,
@@ -120,11 +187,13 @@ async def generate(state: AgentState) -> dict:
     on a rewrite loop, a failed first answer would otherwise pollute the history
     fed to the second generation pass.
     """
+    t0 = time.perf_counter()
     llm = _get_llm()
 
     history_msgs = state["messages"][1:-1]
+    has_context = bool(state.get("retrieved_chunks"))
 
-    if state.get("retrieved_chunks"):
+    if has_context:
         context = "\n\n---\n\n".join(
             f"[{c['filename']} chunk {c['chunk_index']}]\n{c['content']}"
             for c in state["retrieved_chunks"]
@@ -148,6 +217,18 @@ async def generate(state: AgentState) -> dict:
         sources = []
 
     response = await llm.ainvoke(messages_to_send)
+
+    latency_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "generate.done",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "generate",
+            "has_context": has_context,
+            "sources_count": len(sources),
+            "latency_ms": round(latency_ms, 2),
+        },
+    )
     return {
         "answer": response.content,
         "sources": sources,
@@ -166,7 +247,9 @@ async def evaluate(state: AgentState) -> dict:
     regardless of score to prevent infinite loops.
     Fails open ("answer") on any JSON parsing error.
     """
-    llm = _get_llm(model="mistral-small-latest")
+    t0 = time.perf_counter()
+    settings = get_settings()
+    llm = _get_llm(settings, model=settings.ollama_small_chat_model)
 
     context_summary = "\n".join(
         f"- [{c['filename']}]: {c['content'][:100]}..."
@@ -190,7 +273,21 @@ async def evaluate(state: AgentState) -> dict:
         rewrite_suggestion = ""
 
     retry_count = state.get("retry_count", 0) + 1
+    latency_ms = (time.perf_counter() - t0) * 1000
 
+    log_level = logging.WARNING if decision in ("rewrite", "escalate") else logging.INFO
+    logger.log(
+        log_level,
+        "evaluate.decision",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "evaluate",
+            "score": round(score, 2),
+            "decision": decision,
+            "retry_count": retry_count,
+            "latency_ms": round(latency_ms, 2),
+        },
+    )
     return {
         "eval_score": score,
         "eval_decision": decision,
@@ -202,6 +299,14 @@ async def evaluate(state: AgentState) -> dict:
 async def escalate(state: AgentState) -> dict:
     """Set a human-escalation answer when the evaluator cannot find a satisfactory response."""
     settings = get_settings()
+    logger.warning(
+        "escalate.triggered",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "escalate",
+            "retry_count": state.get("retry_count", 0),
+        },
+    )
     return {
         "answer": ESCALATION_RESPONSE.format(
             product_name=settings.product_name,
@@ -236,4 +341,14 @@ async def save_turn(state: AgentState, db: AsyncSession) -> dict:
         conversation.metadata_ = {**conversation.metadata_, "last_updated": str(func.now())}
 
     await db.commit()
+
+    logger.info(
+        "save_turn.done",
+        extra={
+            "conversation_id": str(state["conversation_id"]),
+            "node": "save_turn",
+            "eval_score": state.get("eval_score"),
+            "eval_decision": state.get("eval_decision"),
+        },
+    )
     return {}

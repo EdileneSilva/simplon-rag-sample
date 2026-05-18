@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable -->
 <p align="center">
-  <strong>Sample RAG support chatbot — powered by RAG, LangChain, and Mistral</strong>
+  <strong>Sample RAG support chatbot — powered by RAG, LangChain, and local Ollama models</strong>
 </p>
 
 <p align="center">
@@ -18,15 +18,16 @@
 ---
 
 Intelligent support chatbot example, built on a Retrieval-Augmented Generation (RAG) architecture
-using LangChain, LangGraph, PostgreSQL/pgvector for vector storage, and Mistral for both
-embeddings and LLM inference.
+using LangChain, LangGraph, PostgreSQL/pgvector for vector storage, and local Ollama models for
+both embeddings and LLM inference.
 
 ## Features
 
 - **Document Ingestion** - PDF upload with SHA-256 deduplication, chunking, and embedding
 - **RAG Pipeline** - Semantic retrieval via pgvector cosine similarity + LLM generation
 - **LangGraph Agent** - Stateful multi-step graph: routing, retrieval, generation, history
-- **Mistral AI** - `mistral-embed` (1024 dims) for embeddings, `mistral-large-latest` for LLM
+- **Local Ollama** - `mxbai-embed-large` (1024 dims) for embeddings, `mistral-small3.2` for
+  generation and `mistral:latest` for fast guard/eval calls
 - **PostgreSQL + pgvector** - HNSW index for fast approximate nearest-neighbour search
 - **FastAPI REST API** - 8 endpoints under `/api/v1` for ingestion, chat, and evaluation
 - **Ragas Evaluation** - Faithfulness, answer relevancy, and context recall metrics
@@ -38,7 +39,7 @@ embeddings and LLM inference.
 | Language | Python >= 3.14 |
 | Package Manager | uv |
 | LLM Framework | LangChain + LangGraph |
-| LLM / Embeddings | Mistral AI |
+| LLM / Embeddings | Ollama (local) |
 | Vector Store | PostgreSQL + pgvector |
 | ORM / Migrations | SQLAlchemy (async) + Alembic |
 | API | FastAPI + uvicorn |
@@ -49,11 +50,17 @@ embeddings and LLM inference.
 The fastest way to spin up the full stack (PostgreSQL + API + Streamlit UI):
 
 ```bash
-# 1. Configure the Mistral API key (required)
-cp api/.env.example api/.env
-# Edit api/.env and set MISTRAL_API_KEY
+# 1. Start Ollama on the host and pull the required models (one-time)
+ollama serve &
+ollama pull mistral-small3.2
+ollama pull mistral:latest
+ollama pull mxbai-embed-large
 
-# 2. Start everything in development mode (hot reload, source bind mounts)
+# 2. Configure the environment
+cp api/.env.example api/.env
+# Edit api/.env if you want to point at a non-default Ollama host or use different models
+
+# 3. Start the stack in development mode (hot reload, source bind mounts)
 docker compose up -d
 
 # 3. Open the UI
@@ -78,7 +85,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```bash
 # Copy and configure environment
 cp api/.env.example api/.env
-# Edit api/.env with your API keys and DB connection
+# Edit api/.env with your DB connection and (optionally) Ollama host/models
+# Make sure Ollama is running locally: `ollama serve`
+# And the models are pulled:
+#   ollama pull mistral-small3.2 && ollama pull mistral:latest && ollama pull mxbai-embed-large
 
 # Install API dependencies
 cd api
