@@ -12,6 +12,26 @@ from pythonjsonlogger.json import JsonFormatter
 from app.api_client import create_conversation, send_message
 from app.config import API_BASE_URL
 
+
+import logging
+from pythonjsonlogger.json import JsonFormatter
+
+def _setup_frontend_logging():
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter(
+        fmt='%(asctime)s %(levelname)s %(name)s %(message)s',
+        rename_fields={'asctime': 'timestamp', 'levelname': 'level', 'name': 'logger'},
+        datefmt='%Y-%m-%dT%H:%M:%S',
+    ))
+    frontend_logger = logging.getLogger('simplon.frontend')
+    if not frontend_logger.handlers:
+        frontend_logger.addHandler(handler)
+        frontend_logger.setLevel(logging.INFO)
+        frontend_logger.propagate = False
+    return frontend_logger
+
+_log = _setup_frontend_logging()
+
 # --- Simplon brand palette (https://brandfetch.com/simplon.co) ---
 SIMPLON_RED = "#CE0033"
 SIMPLON_CORAL = "#F26F5C"
