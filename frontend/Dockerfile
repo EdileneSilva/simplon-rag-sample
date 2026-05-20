@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+RUN pip install --no-cache-dir uv && ln -sf $(which uv) /usr/local/bin/uvx
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
