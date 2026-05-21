@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     # RAG tuning
-    chunk_size: int = 256
-    chunk_overlap: int = 32
+    chunk_size: int = 512
+    chunk_overlap: int = 64
     retrieval_top_k: int = 5
 
     # Web loader
