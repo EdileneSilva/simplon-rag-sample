@@ -62,6 +62,7 @@ pythonpath = ["."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ extend-ignore = ["E501"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

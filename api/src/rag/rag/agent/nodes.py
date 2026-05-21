@@ -17,7 +17,6 @@ import re
 import time
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langchain_mistralai import ChatMistralAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
