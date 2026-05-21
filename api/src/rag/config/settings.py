@@ -40,8 +40,17 @@ class Settings(BaseSettings):
     product_name: str = "Dev IA"
     agent_max_retries: int = 2
 
+    # Storage
+    storage_endpoint_url: str = "http://localhost:4443"
+    storage_bucket: str = "rag-corpus"
+
     @property
     def database_url(self) -> str:
+        if self.postgres_host.startswith("/"):
+            return (
+                f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+                f"@/{self.postgres_db}?host={self.postgres_host}"
+            )
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
@@ -49,6 +58,11 @@ class Settings(BaseSettings):
 
     @property
     def database_url_sync(self) -> str:
+        if self.postgres_host.startswith("/"):
+            return (
+                f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
+                f"@/{self.postgres_db}?host={self.postgres_host}"
+            )
         return (
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rag.db.models.document import Document
 from rag.db.session import get_db
 from rag.rag.ingestion.pipeline import ingest_pdf, ingest_url
+from rag.storage.client import upload_file
 
 router = APIRouter(prefix="/documents", tags=["ingestion"])
 
@@ -60,6 +61,7 @@ async def ingest_document(
 
     try:
         result = await ingest_pdf(tmp_path, db)
+        upload_file(tmp_path, f"corpus/{file.filename}")
     finally:
         tmp_path.unlink(missing_ok=True)
 
