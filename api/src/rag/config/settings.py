@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     # RAG tuning
-    chunk_size: int = 512
-    chunk_overlap: int = 64
+    chunk_size: int = 256
+    chunk_overlap: int = 32
     retrieval_top_k: int = 5
 
     # Web loader
@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Agent
     product_name: str = "Dev IA"
     agent_max_retries: int = 2
+
+    # Storage
+    storage_endpoint_url: str = "http://localhost:4443"
+    storage_bucket: str = "rag-corpus"
 
     @property
     def database_url(self) -> str:

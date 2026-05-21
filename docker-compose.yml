@@ -39,6 +39,8 @@ services:
       APP_ENV: development
       CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:4173,http://localhost:8501"
       OLLAMA_BASE_URL: http://172.17.0.1:11434
+      STORAGE_ENDPOINT_URL: "http://fake-gcs:4443"
+      STORAGE_BUCKET: "rag-corpus"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -110,6 +112,16 @@ services:
       - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
+    restart: unless-stopped
+
+  fake-gcs:
+    image: fsouza/fake-gcs-server
+    container_name: simplon_rag_fake_gcs
+    ports:
+      - "4443:4443"
+    command: -scheme http -port 4443 -public-host fake-gcs:4443
+    volumes:
+      - ./gcs-data:/data
     restart: unless-stopped
 
 volumes:
