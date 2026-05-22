@@ -150,6 +150,87 @@ uv run yamllint .
 git commit -m "feat: ..."
 ```
 
+
+# GCP Deployment — Simplon RAG Sample
+
+## GCP Services Used
+
+| Service | Role |
+|---|---|
+| **Artifact Registry** | Stores versioned Docker images for the API and frontend, tagged by commit SHA to ensure full deployment traceability. |
+| **Cloud Run** | Runs the API (FastAPI) and Frontend (Streamlit) containers in managed serverless mode, with automatic scaling to zero when idle. |
+| **Cloud SQL (PostgreSQL 16)** | Hosts the relational and vector database (pgvector extension) used to store conversations and corpus embeddings. |
+| **Cloud Storage (GCS)** | Stores the document corpus (PDFs) used for RAG ingestion, decoupled from Docker images so documents can be updated without redeployment. |
+| **Secret Manager** | Securely manages application secrets (Mistral API key, DB password, JWT key); values are injected into Cloud Run at container startup and never appear in plain text in the config. |
+| **IAM** | Controls access rights between GCP services following the principle of least privilege, via a dedicated service account for the Cloud Run runtime. |
+| **Cloud Logging** | Centralizes and indexes structured JSON logs emitted by the API and frontend, searchable by `request_id`, `severity`, and Cloud Run labels. |
+
+---
+
+## IAM Roles — Service Account `simplon-rag-cloudrun`
+
+The service account `simplon-rag-cloudrun@simplon-rag-263.iam.gserviceaccount.com` is used by both Cloud Run services (API and Frontend).
+
+| Role | Scope | Justification |
+|---|---|---|
+| `roles/artifactregistry.writer` | Project | Allows pushing built Docker images to Artifact Registry. **Why not `artifactregistry.admin`?** That role would allow deleting entire repositories — the runtime only needs to write images, never to administrate the registry. |
+| `roles/cloudsql.client` | Project | Allows the Cloud SQL Auth Proxy embedded in Cloud Run to authenticate against the PostgreSQL instance. Without this role, the connection is refused at the network level before even attempting the password. **Why not `cloudsql.admin`?** That role would allow creating and deleting instances and databases — unnecessary and dangerous for an application runtime. |
+| `roles/logging.logWriter` | Project | Allows writing structured JSON logs to Cloud Logging. Without this role, container stdout logs do not appear in the GCP console. **Why not `logging.admin`?** The runtime only needs to write logs, not read, export, or modify log sinks. |
+| `roles/storage.objectViewer` | Bucket `simplon-rag-263` | Allows reading PDF files from the corpus for ingestion and RAG responses. Bound to the bucket only, not the project. **Why not `storage.objectAdmin`?** That role would allow deleting objects and modifying bucket ACLs — the runtime never needs that. |
+| `roles/storage.objectCreator` | Bucket `simplon-rag-263` | Allows writing new documents uploaded via the API ingestion endpoint. **Why not `storage.objectAdmin`?** Same reason: the runtime writes but never deletes; deletion is a separate administrative operation. |
+| `roles/secretmanager.secretAccessor` | Per secret individually | Allows reading secret values at container startup (DB password, Mistral API key, JWT key). Bound per secret, not at the project level. **Why not at the project level?** A project-level binding would grant access to all GCP secrets in the project, including those of other potential services. |
+
+> The roles `artifactregistry.serviceAgent`, `containerregistry.ServiceAgent`, `pubsub.serviceAgent`, and `run.serviceAgent` are service accounts managed automatically by GCP and are not assigned manually.
+
+---
+
+## Cloud Run Revision Rollback Procedure
+
+Cloud Run retains all deployed revisions. A rollback means redirecting 100% of traffic to a previous revision — no image rebuild required, completed in under 30 seconds.
+
+### 1. Identify the target revision
+
+```bash
+gcloud run revisions list \
+  --service=simplon-rag-api \
+  --region=europe-west1 \
+  --project=simplon-rag-263
+```
+
+The output lists all revisions with their date, current traffic percentage, and status (`ACTIVE` / `FAILED`).
+
+### 2. Switch traffic
+
+```bash
+gcloud run services update-traffic simplon-rag-api \
+  --region=europe-west1 \
+  --to-revisions=simplon-rag-api-00002-xyz=100 \
+  --project=simplon-rag-263
+```
+
+Replace `simplon-rag-api-00002-xyz` with the revision name identified in the previous step.
+
+### 3. Verify
+
+```bash
+# Confirm traffic has been switched
+gcloud run services describe simplon-rag-api \
+  --region=europe-west1 \
+  --project=simplon-rag-263 \
+  --format="value(status.traffic)"
+
+# Check logs in real time
+gcloud beta run services logs tail simplon-rag-api \
+  --region=europe-west1 \
+  --project=simplon-rag-263
+```
+
+### Key points
+
+- The rollback **does not require rebuilding the image** — Cloud Run reuses the image from the target revision already present in Artifact Registry.
+- If startup fails due to a missing environment variable, the revision enters a `FAILED` state and Cloud Run sends it no traffic — the previous revision continues serving requests until the rollback is complete.
+- For the **frontend**, use the same procedure replacing `simplon-rag-api` with `simplon-rag-frontend`.
+
 ## Documentation
 
 | File | Description |
